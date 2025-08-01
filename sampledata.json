@@ -1,0 +1,39 @@
+{
+"summary": {
+"todayApplications": 1,
+"monthlyApplications": 3,
+"totalApplications": 5
+},
+"applications": [
+{
+"jobTitle": "Software Quality Assurance Engineer",
+"companyLink": "https://sec.wd3.myworkdayjobs.com/de-DE/Samsung_Careers",
+"status": "Applied",
+"dateApplied": "2025-07-25"
+},
+{
+"jobTitle": "Frontend Developer Intern",
+"companyLink": "https://careers.google.com",
+"status": "Screen",
+"dateApplied": "2025-07-20"
+},
+{
+"jobTitle": "Backend Developer",
+"companyLink": "https://jobs.amazon.com",
+"status": "Interviewing",
+"dateApplied": "2025-07-10"
+},
+{
+"jobTitle": "Product Manager",
+"companyLink": "https://careers.microsoft.com",
+"status": "Rejected",
+"dateApplied": "2025-06-30"
+},
+{
+"jobTitle": "UI/UX Designer",
+"companyLink": "https://careers.adobe.com",
+"status": "Archived",
+"dateApplied": "2025-06-20"
+}
+]
+}

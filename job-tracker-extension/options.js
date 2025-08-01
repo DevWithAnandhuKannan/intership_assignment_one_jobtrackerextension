@@ -1,0 +1,474 @@
+const applicationsKey = 'applications';
+const statusOptions = ["Applied", "Screen", "Interviewing", "Offer", "Rejected", "Archived"];
+
+
+const domCache = {
+  tbody: document.getElementById('applicationsTableBody'),
+  todayApps: document.getElementById('todayApps'),
+  monthlyApps: document.getElementById('monthlyApps'),
+  totalApps: document.getElementById('totalApps'),
+  searchInput: document.getElementById('searchInput'),
+  addJobBtn: document.getElementById('addJobBtn'),
+  uploadJsonInput: document.getElementById('uploadJsonInput')
+};
+
+
+const dateUtils = {
+  formatDate: (date) => date.toISOString().split('T')[0],
+  today: new Date(),
+  get todayStr() { return this.formatDate(this.today); },
+  get date30DaysAgo() { return this.formatDate(new Date(this.today - 30 * 24 * 60 * 60 * 1000)); }
+};
+
+
+const storage = {
+  get: () => new Promise(resolve => {
+    chrome.storage.local.get([applicationsKey], result => {
+      resolve(result[applicationsKey] || []);
+    });
+  }),
+  set: (apps) => new Promise(resolve => {
+    chrome.storage.local.set({ [applicationsKey]: apps }, resolve);
+  }),
+  updateAppStatus: async (index, newStatus) => {
+    const apps = await storage.get();
+    if (apps[index]) {
+      apps[index].status = newStatus;
+      await storage.set(apps);
+      loadDashboard();
+    }
+  }
+};
+
+
+async function initializeStorage() {
+  const apps = await storage.get();
+  if (!apps.length) {
+    await storage.set(dummyData);
+  }
+  loadDashboard();
+}
+
+async function loadDashboard() {
+  const apps = await storage.get();
+  updateAnalytics(apps);
+  renderTable(apps);
+}
+
+function updateAnalytics(apps) {
+  const total = apps.length;
+  const todayCount = apps.filter(app => app.dateApplied === dateUtils.todayStr).length;
+  const monthlyCount = apps.filter(app => app.dateApplied >= dateUtils.date30DaysAgo).length;
+
+  domCache.todayApps.textContent = todayCount;
+  domCache.monthlyApps.textContent = monthlyCount;
+  domCache.totalApps.textContent = total;
+}
+
+function renderTable(apps) {
+  const { tbody } = domCache;
+  
+
+  if (!apps.length || tbody.children.length === 0 || tbody.querySelector('.empty-message')) {
+    tbody.innerHTML = '';
+    
+    if (!apps.length) {
+      const emptyRow = document.createElement('tr');
+      emptyRow.innerHTML = `
+        <td class="text-center py-10 text-gray-400 cursor-pointer underline" colspan="5">
+          Your submitted job applications will appear here. Click here to create your application profile.
+        </td>
+      `;
+      emptyRow.onclick = modal.openAddPopup;
+      tbody.appendChild(emptyRow);
+      return;
+    }
+  }
+
+
+  apps.forEach((app, index) => {
+    let row = tbody.children[index];
+    
+    if (!row) {
+      row = document.createElement('tr');
+      row.className = 'hover:bg-gray-800';
+      row.setAttribute('data-job', app.jobTitle.toLowerCase());
+      row.setAttribute('data-company', app.companyLink.toLowerCase());
+      tbody.appendChild(row);
+    }
+
+
+    row.innerHTML = `
+      <td class="px-4 py-2">
+        ${app.jobLink?.trim() ? 
+          `<a href="${app.jobLink}" target="_blank" rel="noopener noreferrer" class="text-blue-400 hover:underline">${app.jobTitle}</a>` : 
+          app.jobTitle}
+      </td>
+      <td class="px-4 py-2">
+        <a href="${app.companyLink}" target="_blank" rel="noopener noreferrer" class="text-blue-400 hover:underline break-all">${app.companyLink}</a>
+      </td>
+      <td class="px-4 py-2">
+        <select class="bg-gray-900 text-white px-2 py-1 rounded status-dropdown">
+          ${statusOptions.map(option => 
+            `<option value="${option}" ${option === app.status ? 'selected' : ''}>${option}</option>`
+          ).join('')}
+        </select>
+      </td>
+      <td class="px-4 py-2">${app.dateApplied}</td>
+    `;
+
+    const select = row.querySelector('select');
+    select.addEventListener('change', (e) => {
+      storage.updateAppStatus(index, e.target.value);
+    });
+  });
+
+
+  while (tbody.children.length > apps.length) {
+    tbody.removeChild(tbody.lastChild);
+  }
+}
+
+
+const modal = {
+  createStyles: () => {
+    if (!document.getElementById('modalStyles')) {
+      const style = document.createElement('style');
+      style.id = 'modalStyles';
+      style.textContent = `
+        #modalBg {
+          position: fixed; 
+          top: 0; 
+          left: 0; 
+          width: 100%; 
+          height: 100%;
+          background-color: rgba(0,0,0,0.7);
+          display: flex; 
+          justify-content: center; 
+          align-items: center;
+          z-index: 1000;
+          animation: fadeInBg 0.3s ease forwards;
+        }
+        
+        #modalContent {
+          background-color: #1f2937; 
+          padding: 2rem; 
+          border-radius: 0.5rem;
+          width: 100%; 
+          max-width: 500px;
+          color: #e5e7eb; 
+          box-shadow: 0 0 15px rgba(0,0,0,0.5);
+          font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+          animation: scaleIn 0.3s ease forwards;
+        }
+        
+        #modalContent h2 {
+          font-size: 1.5rem;
+          font-weight: 600;
+          color: #3b82f6;
+          margin-bottom: 1.5rem;
+          padding-bottom: 0.5rem;
+          border-bottom: 1px solid #374151;
+        }
+        
+        .form-group {
+          margin-bottom: 1.25rem;
+        }
+        
+        .form-group label {
+          display: block;
+          margin-bottom: 0.5rem;
+          font-weight: 500;
+          color: #e5e7eb;
+        }
+        
+        .form-group input {
+          width: 92%;
+          padding: 0.75rem;
+          background-color: #1f2937;
+          border: 1px solid #374151;
+          border-radius: 0.375rem;
+          color: #f3f4f6;
+          font-size: 0.875rem;
+          transition: border-color 0.2s;
+        }
+        
+        .form-group input:focus {
+          outline: none;
+          border-color: #3b82f6;
+          box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
+        }
+        
+        .form-actions {
+          display: flex;
+          justify-content: flex-end;
+          gap: 0.75rem;
+          margin-top: 1.5rem;
+        }
+        
+        .btn {
+          padding: 0.625rem 1.25rem;
+          border-radius: 0.375rem;
+          font-weight: 500;
+          cursor: pointer;
+          transition: all 0.2s;
+        }
+        
+        .btn-cancel {
+          background-color: #ef4444;
+          color: white;
+        }
+        
+        .btn-cancel:hover {
+          background-color: #dc2626;
+        }
+        
+        .btn-submit {
+          background-color: #3b82f6;
+          color: white;
+        }
+        
+        .btn-submit:hover {
+          background-color: #2563eb;
+        }
+        
+        @keyframes fadeInBg { 
+          from { opacity: 0; } 
+          to { opacity: 1; } 
+        }
+        
+        @keyframes scaleIn {
+          from { opacity: 0; transform: scale(0.95); }
+          to { opacity: 1; transform: scale(1); }
+        }
+        
+        @keyframes fadeOutBg { 
+          from { opacity: 1; } 
+          to { opacity: 0; } 
+        }
+        
+        @keyframes scaleOut { 
+          from { opacity: 1; transform: scale(1); } 
+          to { opacity: 0; transform: scale(0.95); } 
+        }
+      `;
+      document.head.appendChild(style);
+    }
+  },
+  close: (modalBg) => {
+    modalBg.style.animation = 'fadeOutBg 0.3s ease forwards';
+    modalBg.querySelector('#modalContent').style.animation = 'scaleOut 0.3s ease forwards';
+    setTimeout(() => modalBg.remove(), 300);
+  },
+  openAddPopup: () => {
+    modal.createStyles();
+    
+    const modalBg = document.createElement('div');
+    modalBg.id = 'modalBg';
+    modalBg.innerHTML = `
+      <div id="modalContent">
+        <h2>Add Job Application</h2>
+        <form id="addJobForm">
+          <div class="form-group">
+            <label for="jobTitleInput">Job Title</label>
+            <input type="text" id="jobTitleInput" required placeholder="Software Engineer" />
+          </div>
+          <div class="form-group">
+            <label for="jobLinkInput">Job Link (optional)</label>
+            <input type="url" id="jobLinkInput" placeholder="https://company.com/job/123" />
+          </div>
+          <div class="form-group">
+            <label for="companyLinkInput">Company Website</label>
+            <input type="url" id="companyLinkInput" required placeholder="https://company.com" />
+          </div>
+          <div class="form-group">
+            <label for="dateAppliedInput">Application Date</label>
+            <input type="date" id="dateAppliedInput" required max="${dateUtils.todayStr}" />
+          </div>
+          <div class="form-actions">
+            <button type="button" class="btn btn-cancel" id="cancelAddBtn">Cancel</button>
+            <button type="submit" class="btn btn-submit">Add Application</button>
+          </div>
+        </form>
+      </div>
+    `;
+    
+    document.body.appendChild(modalBg);
+    
+    document.getElementById('dateAppliedInput').value = dateUtils.todayStr;
+    
+    document.getElementById('cancelAddBtn').onclick = () => modal.close(modalBg);
+    
+    document.getElementById('addJobForm').onsubmit = async (e) => {
+      e.preventDefault();
+      const form = e.target;
+      const jobTitle = form.jobTitleInput.value.trim();
+      const jobLink = form.jobLinkInput.value.trim();
+      const companyLink = form.companyLinkInput.value.trim();
+      const dateApplied = form.dateAppliedInput.value;
+
+      if (!jobTitle || !companyLink || !dateApplied) {
+        alert('Please fill in all required fields.');
+        return;
+      }
+
+      const apps = await storage.get();
+      const newApp = { 
+        jobTitle, 
+        jobLink, 
+        companyLink, 
+        status: "Applied", 
+        dateApplied 
+      };
+      
+
+      if (domCache.tbody.querySelector('.empty-message')) {
+        domCache.tbody.innerHTML = '';
+      }
+      
+      apps.push(newApp);
+      await storage.set(apps);
+      
+      const newRow = document.createElement('tr');
+      newRow.className = 'hover:bg-gray-800';
+      newRow.setAttribute('data-job', newApp.jobTitle.toLowerCase());
+      newRow.setAttribute('data-company', newApp.companyLink.toLowerCase());
+      
+      newRow.innerHTML = `
+        <td class="px-4 py-2">
+          ${newApp.jobLink?.trim() ? 
+            `<a href="${newApp.jobLink}" target="_blank" rel="noopener noreferrer" class="text-blue-400 hover:underline">${newApp.jobTitle}</a>` : 
+            newApp.jobTitle}
+        </td>
+        <td class="px-4 py-2">
+          <a href="${newApp.companyLink}" target="_blank" rel="noopener noreferrer" class="text-blue-400 hover:underline break-all">${newApp.companyLink}</a>
+        </td>
+        <td class="px-4 py-2">
+          <select class="bg-gray-900 text-white px-2 py-1 rounded status-dropdown">
+            ${statusOptions.map(option => 
+              `<option value="${option}" ${option === newApp.status ? 'selected' : ''}>${option}</option>`
+            ).join('')}
+          </select>
+        </td>
+        <td class="px-4 py-2">${newApp.dateApplied}</td>
+      `;
+      
+      const select = newRow.querySelector('select');
+      select.addEventListener('change', (e) => {
+        storage.updateAppStatus(apps.length - 1, e.target.value);
+      });
+      
+      domCache.tbody.appendChild(newRow);
+      updateAnalytics(apps);
+      modal.close(modalBg);
+    };
+  }
+};
+
+async function handleUploadJSON(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+
+  try {
+    const json = await new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = e => resolve(e.target.result);
+      reader.onerror = e => reject(new Error('File reading failed'));
+      reader.readAsText(file);
+    });
+
+    const data = JSON.parse(json);
+    if (!data.applications || !Array.isArray(data.applications)) {
+      throw new Error("Invalid JSON structure: Missing 'applications' array");
+    }
+
+    const normalizedApps = data.applications.map(app => ({
+      ...app,
+      status: statusOptions.includes(app.status) ? app.status : "Applied"
+    }));
+
+    const existingApps = await storage.get();
+    const mergedApps = [...existingApps];
+    
+    normalizedApps.forEach(newApp => {
+      const exists = existingApps.some(app =>
+        app.jobTitle === newApp.jobTitle &&
+        app.companyLink === newApp.companyLink &&
+        app.dateApplied === newApp.dateApplied
+      );
+      if (!exists) mergedApps.push(newApp);
+    });
+
+    await storage.set(mergedApps);
+    loadDashboard();
+    alert("Data uploaded and merged successfully!");
+    event.target.value = '';
+  } catch (err) {
+    alert(`Error: ${err.message}`);
+  }
+}
+
+
+function setupUI() {
+  domCache.addJobBtn.addEventListener('click', modal.openAddPopup);
+  domCache.uploadJsonInput.addEventListener('change', handleUploadJSON);
+  
+
+  const tabs = Array.from(document.querySelectorAll('.tab'));
+  tabs.forEach(tab => {
+    tab.addEventListener('click', async () => {
+      tabs.forEach(t => t.classList.remove('active'));
+      tab.classList.add('active');
+      const apps = await storage.get();
+      renderTable(filterApps(apps, tab.textContent.trim()));
+    });
+  });
+
+
+  domCache.searchInput.addEventListener('input', async () => {
+    const query = domCache.searchInput.value.trim().toLowerCase();
+    const apps = await storage.get();
+    const filtered = apps.filter(app =>
+      app.jobTitle.toLowerCase().includes(query) ||
+      app.companyLink.toLowerCase().includes(query)
+    );
+    renderTable(filtered);
+  });
+}
+
+
+
+
+
+function filterApps(apps, filter) {
+  if (filter === 'All') return apps;
+  
+  const todayStr = dateUtils.todayStr;
+  const isWithinDays = (dateStr, days) => {
+    const date = new Date(dateStr);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const pastDate = new Date(today);
+    pastDate.setDate(pastDate.getDate() - days + 1);
+    return date >= pastDate && date <= today;
+  };
+
+  switch(filter) {
+    case 'Today': return apps.filter(app => app.dateApplied === todayStr);
+    case '1 Week': return apps.filter(app => isWithinDays(app.dateApplied, 7));
+    case '1 Month': return apps.filter(app => isWithinDays(app.dateApplied, 30));
+    default: return apps;
+  }
+}
+
+
+
+
+
+
+
+
+document.addEventListener('DOMContentLoaded', () => {
+  initializeStorage();
+  setupUI();
+});
