@@ -544,19 +544,19 @@ function filterApps(apps, filter) {
   }
 }
 
-// Add a custom graph grid rendering function for better label alignment
+
 function createGraphGrid(apps) {
   const grid = document.querySelector('.graph');
   grid.innerHTML = '';
   grid.style.position = 'relative';
 
-  // Group applications by date
+
   const dateCounts = {};
   apps.forEach(app => {
     dateCounts[app.dateApplied] = (dateCounts[app.dateApplied] || 0) + 1;
   });
 
-  // Convert to array and sort by date
+
   const dateEntries = Object.entries(dateCounts).map(([date, count]) => ({ date, count }));
   dateEntries.sort((a, b) => new Date(a.date) - new Date(b.date));
 
@@ -598,7 +598,7 @@ function createGraphGrid(apps) {
     grid.appendChild(label);
   }
 
-  // Create x-axis labels and vertical grid lines
+
   const numVerticalLines = Math.min(dateEntries.length, 7);
   for (let i = 0; i < numVerticalLines; i++) {
     const index = Math.floor(i * (dateEntries.length - 1) / (numVerticalLines - 1));
@@ -627,8 +627,6 @@ function createGraphGrid(apps) {
     grid.appendChild(label);
   }
 
-  // Draw connecting lines between points (fix: use SVG for proper alignment)
-  // Remove previous SVG if any
   let svg = grid.querySelector('svg');
   if (svg) svg.remove();
   svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
@@ -641,7 +639,7 @@ function createGraphGrid(apps) {
   svg.style.height = '100%';
   svg.style.pointerEvents = 'none';
 
-  // Calculate points for polyline
+
   const points = dateEntries.map(entry => {
     const date = new Date(entry.date);
     const x = ((date - minDate) / dateRange) * grid.clientWidth;
@@ -660,7 +658,7 @@ function createGraphGrid(apps) {
   }
   grid.appendChild(svg);
 
-  // Draw data points (keep as before, but use grid.clientWidth/Height for accuracy)
+
   dateEntries.forEach(entry => {
     const date = new Date(entry.date);
     const xPos = ((date - minDate) / dateRange) * 100;
