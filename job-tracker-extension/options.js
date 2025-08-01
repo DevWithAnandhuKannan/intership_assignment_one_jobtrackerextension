@@ -53,6 +53,7 @@ async function loadDashboard() {
   const apps = await storage.get();
   updateAnalytics(apps);
   renderTable(apps);
+  createGraphGrid(apps);
 }
 
 function updateAnalytics(apps) {
@@ -409,6 +410,88 @@ async function handleUploadJSON(event) {
 }
 
 
+const chartJsScript = document.createElement('script');
+chartJsScript.src = 'https://cdn.jsdelivr.net/npm/chart.js';
+document.head.appendChild(chartJsScript);
+
+let chartInstance = null;
+
+function renderApplicationsChart(apps) {
+  if (!window.Chart) return; 
+  const ctx = document.getElementById('applicationsChart').getContext('2d');
+
+
+  const dateCounts = {};
+  apps.forEach(app => {
+    dateCounts[app.dateApplied] = (dateCounts[app.dateApplied] || 0) + 1;
+  });
+
+  const sortedDates = Object.keys(dateCounts).sort();
+  const counts = sortedDates.map(date => dateCounts[date]);
+
+  if (chartInstance) chartInstance.destroy();
+  chartInstance = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: sortedDates,
+      datasets: [{
+        label: 'Applications',
+        data: counts,
+        borderColor: '#6366f1',
+        backgroundColor: 'rgba(99,102,241,0.2)',
+        fill: true,
+        tension: 0.3,
+        pointRadius: 4,
+        pointBackgroundColor: '#6366f1',
+      }]
+    },
+    options: {
+      responsive: true,
+      plugins: {
+        legend: { display: false },
+        tooltip: { enabled: true }
+      },
+      scales: {
+        x: {
+          grid: {
+            display: true,
+            color: '#374151',
+            borderDash: [4, 4],
+          },
+          title: {
+            display: false
+          }
+        },
+        y: {
+          beginAtZero: true,
+          grid: {
+            display: true,
+            color: '#374151',
+            borderDash: [4, 4], 
+          },
+          title: {
+            display: false
+          }
+        }
+      }
+    }
+  });
+}
+
+
+const origLoadDashboard = loadDashboard;
+loadDashboard = async function() {
+  const apps = await storage.get();
+  updateAnalytics(apps);
+  renderTable(apps);
+  createGraphGrid(apps);
+};
+
+
+chartJsScript.onload = () => {
+  loadDashboard();
+};
+
 function setupUI() {
   domCache.addJobBtn.addEventListener('click', modal.openAddPopup);
   domCache.uploadJsonInput.addEventListener('change', handleUploadJSON);
@@ -461,9 +544,154 @@ function filterApps(apps, filter) {
   }
 }
 
+// Add a custom graph grid rendering function for better label alignment
+function createGraphGrid(apps) {
+  const grid = document.querySelector('.graph');
+  grid.innerHTML = '';
+  grid.style.position = 'relative';
+
+  // Group applications by date
+  const dateCounts = {};
+  apps.forEach(app => {
+    dateCounts[app.dateApplied] = (dateCounts[app.dateApplied] || 0) + 1;
+  });
+
+  // Convert to array and sort by date
+  const dateEntries = Object.entries(dateCounts).map(([date, count]) => ({ date, count }));
+  dateEntries.sort((a, b) => new Date(a.date) - new Date(b.date));
+
+  if (dateEntries.length === 0) {
+    const emptyMessage = document.createElement('div');
+    emptyMessage.className = 'text-gray-400 text-center py-10';
+    emptyMessage.textContent = 'No application data to display';
+    grid.appendChild(emptyMessage);
+    return;
+  }
+
+  const minDate = new Date(dateEntries[0].date);
+  const maxDate = new Date(dateEntries[dateEntries.length - 1].date);
+  const dateRange = maxDate - minDate || 1;
+
+  const maxCount = Math.max(...dateEntries.map(entry => entry.count), 1);
+
+  for (let i = 0; i <= maxCount; i++) {
+    const y = 100 - (i / maxCount) * 100;
+    const line = document.createElement('div');
+    line.style.position = 'absolute';
+    line.style.left = '0';
+    line.style.right = '0';
+    line.style.height = '1px';
+    line.style.background = '#374151';
+    line.style.bottom = `${(i / maxCount) * 100}%`;
+    line.style.opacity = '0.5';
+    grid.appendChild(line);
+
+    const label = document.createElement('div');
+    label.style.position = 'absolute';
+    label.style.left = '-40px';
+    label.style.bottom = `${(i / maxCount) * 100}%`;
+    label.style.color = '#a5b4fc';
+    label.style.fontSize = '0.8rem';
+    label.style.width = '35px';
+    label.style.textAlign = 'right';
+    label.textContent = i;
+    grid.appendChild(label);
+  }
+
+  // Create x-axis labels and vertical grid lines
+  const numVerticalLines = Math.min(dateEntries.length, 7);
+  for (let i = 0; i < numVerticalLines; i++) {
+    const index = Math.floor(i * (dateEntries.length - 1) / (numVerticalLines - 1));
+    const dateEntry = dateEntries[index];
+    const date = new Date(dateEntry.date);
+    const xPos = ((date - minDate) / dateRange) * 100;
+
+    const line = document.createElement('div');
+    line.style.position = 'absolute';
+    line.style.bottom = '0';
+    line.style.top = '0';
+    line.style.width = '1px';
+    line.style.background = '#374151';
+    line.style.left = `${xPos}%`;
+    line.style.opacity = '0.5';
+    grid.appendChild(line);
+
+    const label = document.createElement('div');
+    label.style.position = 'absolute';
+    label.style.left = `${xPos}%`;
+    label.style.bottom = '-22px';
+    label.style.transform = 'translateX(-50%)';
+    label.style.color = '#a5b4fc';
+    label.style.fontSize = '0.8rem';
+    label.textContent = new Date(dateEntry.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    grid.appendChild(label);
+  }
+
+  // Draw connecting lines between points (fix: use SVG for proper alignment)
+  // Remove previous SVG if any
+  let svg = grid.querySelector('svg');
+  if (svg) svg.remove();
+  svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  svg.setAttribute('width', '100%');
+  svg.setAttribute('height', '100%');
+  svg.style.position = 'absolute';
+  svg.style.left = '0';
+  svg.style.top = '0';
+  svg.style.width = '100%';
+  svg.style.height = '100%';
+  svg.style.pointerEvents = 'none';
+
+  // Calculate points for polyline
+  const points = dateEntries.map(entry => {
+    const date = new Date(entry.date);
+    const x = ((date - minDate) / dateRange) * grid.clientWidth;
+    const y = grid.clientHeight - (entry.count / maxCount) * grid.clientHeight;
+    return `${x},${y}`;
+  }).join(' ');
+
+  if (dateEntries.length > 1) {
+    const polyline = document.createElementNS('http://www.w3.org/2000/svg', 'polyline');
+    polyline.setAttribute('points', points);
+    polyline.setAttribute('fill', 'none');
+    polyline.setAttribute('stroke', '#6366f1');
+    polyline.setAttribute('stroke-width', '2');
+    polyline.setAttribute('stroke-linecap', 'round');
+    svg.appendChild(polyline);
+  }
+  grid.appendChild(svg);
+
+  // Draw data points (keep as before, but use grid.clientWidth/Height for accuracy)
+  dateEntries.forEach(entry => {
+    const date = new Date(entry.date);
+    const xPos = ((date - minDate) / dateRange) * 100;
+    const yPos = (entry.count / maxCount) * 100;
+    const dot = document.createElement('div');
+    dot.style.position = 'absolute';
+    dot.style.left = `${xPos}%`;
+    dot.style.bottom = `${yPos}%`;
+    dot.style.width = '10px';
+    dot.style.height = '10px';
+    dot.style.background = '#6366f1';
+    dot.style.borderRadius = '50%';
+    dot.style.transform = 'translate(-50%, 50%)';
+    dot.style.border = '2px solid #fff';
+    dot.setAttribute('title', `${entry.date}: ${entry.count} application${entry.count > 1 ? 's' : ''}`);
+    grid.appendChild(dot);
+  });
+}
 
 
 
+
+let resizeTimeout;
+
+window.addEventListener('resize', async () => {
+  clearTimeout(resizeTimeout);
+  resizeTimeout = setTimeout(async () => {
+    const apps = await storage.get();
+    createGraphGrid(apps);
+  }, 300); // Wait 300ms after resize ends
+});
 
 
 
